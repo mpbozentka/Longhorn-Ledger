@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { supabaseServer } from '@/lib/supabase-server';
+import { getSupabaseServer } from '@/lib/supabase-server';
 import { computeRoundStats } from '@/lib/rounds-storage';
 import type { RoundState } from '@/lib/types';
 
@@ -11,7 +11,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data, error } = await supabaseServer
+    const supabase = getSupabaseServer();
+    const { data, error } = await supabase
       .from('rounds')
       .select('id, created_at, total_score, total_sg, round_state')
       .eq('user_id', userId)
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
     const roundState = (await request.json()) as RoundState;
     const { totalScore, totalSG } = computeRoundStats(roundState);
 
-    const { error } = await supabaseServer.from('rounds').insert({
+    const supabase = getSupabaseServer();
+    const { error } = await supabase.from('rounds').insert({
       user_id: userId,
       total_score: totalScore,
       total_sg: totalSG,

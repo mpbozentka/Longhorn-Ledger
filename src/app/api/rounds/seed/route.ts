@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { supabaseServer } from '@/lib/supabase-server';
+import { getSupabaseServer } from '@/lib/supabase-server';
 import { computeRoundStats } from '@/lib/rounds-storage';
 import { getDemoRoundState } from '@/lib/demo-round';
 
@@ -12,8 +12,9 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const supabase = getSupabaseServer();
     // Remove existing rounds so we replace with the new demo set
-    const { error: deleteError } = await supabaseServer
+    const { error: deleteError } = await supabase
       .from('rounds')
       .delete()
       .eq('user_id', userId);
@@ -41,7 +42,7 @@ export async function POST() {
       });
     }
 
-    const { error } = await supabaseServer.from('rounds').insert(rows);
+    const { error } = await supabase.from('rounds').insert(rows);
 
     if (error) {
       console.error('Supabase rounds seed error:', error);

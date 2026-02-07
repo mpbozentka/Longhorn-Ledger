@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
-import { Inter } from 'next/font/google';
 import {
   ClerkProvider,
   SignInButton,
@@ -11,8 +10,6 @@ import {
   SignedOut,
   UserButton,
 } from '@clerk/nextjs';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: 'The Longhorn Ledger',
@@ -26,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={cn('h-full', inter.variable)}>
+      <html lang="en" className="h-full">
         <body
           className={cn(
             'h-full min-h-screen font-body antialiased',
