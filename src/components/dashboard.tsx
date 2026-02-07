@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
-import { getRounds, type SavedRound } from '@/lib/rounds-storage';
+import { getRounds, computeRoundStats, type SavedRound } from '@/lib/rounds-storage';
+import { getDemoRoundState } from '@/lib/demo-round';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,15 +40,21 @@ export function Dashboard() {
   }, [user?.id]);
 
   const [selectedRoundIndex, setSelectedRoundIndex] = useState<number | null>(null);
+  const [useDemoStats, setUseDemoStats] = useState(false);
+  const [demoRounds, setDemoRounds] = useState<SavedRound[]>([]);
 
-  const displayedRounds = useMemo(() => rounds.slice(0, 10), [rounds]);
+  const currentRounds = useMemo(
+    () => (useDemoStats ? demoRounds : rounds),
+    [useDemoStats, demoRounds, rounds]
+  );
+  const displayedRounds = useMemo(() => currentRounds.slice(0, 10), [currentRounds]);
   const safeSelectedIndex =
-    selectedRoundIndex !== null && selectedRoundIndex >= 0 && selectedRoundIndex < rounds.length
+    selectedRoundIndex !== null && selectedRoundIndex >= 0 && selectedRoundIndex < currentRounds.length
       ? selectedRoundIndex
       : null;
   const roundsForTables = useMemo(
-    () => (safeSelectedIndex !== null ? [rounds[safeSelectedIndex]] : displayedRounds).filter(Boolean),
-    [rounds, safeSelectedIndex, displayedRounds]
+    () => (safeSelectedIndex !== null ? [currentRounds[safeSelectedIndex]] : displayedRounds).filter(Boolean),
+    [currentRounds, safeSelectedIndex, displayedRounds]
   );
 
   const chartData = useMemo(() => {
@@ -168,6 +175,38 @@ export function Dashboard() {
   const displayName = user?.firstName ?? user?.fullName ?? 'there';
   const [seeding, setSeeding] = useState(false);
 
+  const generateDemoRounds = useCallback((): SavedRound[] => {
+    const baseDate = new Date();
+    return Array.from({ length: 10 }, (_, i) => {
+      const state = getDemoRoundState(i);
+      const { totalScore, totalSG } = computeRoundStats(state);
+      const date = new Date(baseDate);
+      date.setDate(date.getDate() - (9 - i));
+      return {
+        date: date.toISOString(),
+        totalScore,
+        totalSG,
+        roundState: state,
+      };
+    });
+  }, []);
+
+  const handleSwitchToDemo = useCallback(() => {
+    setUseDemoStats(true);
+    setDemoRounds((prev) => (prev.length === 10 ? prev : generateDemoRounds()));
+    setSelectedRoundIndex(null);
+  }, [generateDemoRounds]);
+
+  const handleSwitchToMyStats = useCallback(() => {
+    setUseDemoStats(false);
+    setSelectedRoundIndex(null);
+  }, []);
+
+  const handleReplaceDemoRounds = useCallback(() => {
+    setDemoRounds(generateDemoRounds());
+    setSelectedRoundIndex(null);
+  }, [generateDemoRounds]);
+
   const handleLoadDemoRounds = async () => {
     setSeeding(true);
     try {
@@ -193,25 +232,43 @@ export function Dashboard() {
           <CardDescription>
             {loading
               ? 'Loading your rounds…'
-              : rounds.length === 0
-                ? 'Start a round and submit it to see your strokes gained trend here.'
-                : `You have ${rounds.length} round${rounds.length === 1 ? '' : 's'} logged.`}
+              : useDemoStats
+                ? 'Viewing demo stats (10 sample rounds). Switch to see your logged rounds.'
+                : rounds.length === 0
+                  ? 'Start a round and submit it to see your strokes gained trend here.'
+                  : `You have ${rounds.length} round${rounds.length === 1 ? '' : 's'} logged.`}
           </CardDescription>
         </CardHeader>
         {!loading && (
-          <CardContent className="pt-0">
-            <button
-              type="button"
-              onClick={handleLoadDemoRounds}
-              disabled={seeding}
-              className="text-sm text-primary hover:underline font-medium"
-            >
-              {seeding
-                ? 'Loading…'
-                : rounds.length === 0
-                  ? 'Load 10 demo rounds to preview your stats (68–80)'
-                  : 'Replace with 10 new demo rounds (68–80)'}
-            </button>
+          <CardContent className="pt-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant={useDemoStats ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={useDemoStats ? handleSwitchToMyStats : handleSwitchToDemo}
+              >
+                {useDemoStats ? 'View my stats' : 'View demo stats'}
+              </Button>
+              {useDemoStats && (
+                <Button variant="ghost" size="sm" onClick={handleReplaceDemoRounds}>
+                  Replace with 10 new demo rounds
+                </Button>
+              )}
+            </div>
+            {!useDemoStats && (
+              <button
+                type="button"
+                onClick={handleLoadDemoRounds}
+                disabled={seeding}
+                className="text-sm text-primary hover:underline font-medium"
+              >
+                {seeding
+                  ? 'Loading…'
+                  : rounds.length === 0
+                    ? 'Load 10 demo rounds into your account (overwrites saved rounds)'
+                    : 'Replace my saved rounds with 10 demo rounds'}
+              </button>
+            )}
           </CardContent>
         )}
         {chartData.length > 0 && (
