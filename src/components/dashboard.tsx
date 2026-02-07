@@ -173,7 +173,6 @@ export function Dashboard() {
   }, [roundsForTables]);
 
   const displayName = user?.firstName ?? user?.fullName ?? 'there';
-  const [seeding, setSeeding] = useState(false);
 
   const generateDemoRounds = useCallback((): SavedRound[] => {
     const baseDate = new Date();
@@ -207,23 +206,6 @@ export function Dashboard() {
     setSelectedRoundIndex(null);
   }, [generateDemoRounds]);
 
-  const handleLoadDemoRounds = async () => {
-    setSeeding(true);
-    try {
-      const res = await fetch('/api/rounds/seed', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await getRounds();
-      setRounds(data);
-    } catch {
-      // ignore
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   return (
     <div className="space-y-6 w-full max-w-md mx-auto">
       <Card>
@@ -233,7 +215,7 @@ export function Dashboard() {
             {loading
               ? 'Loading your rounds…'
               : useDemoStats
-                ? 'Viewing demo stats (10 sample rounds). Switch to see your logged rounds.'
+                ? 'Demo stats (development only — not saved to your account). Switch to see your logged rounds.'
                 : rounds.length === 0
                   ? 'Start a round and submit it to see your strokes gained trend here.'
                   : `You have ${rounds.length} round${rounds.length === 1 ? '' : 's'} logged.`}
@@ -255,20 +237,6 @@ export function Dashboard() {
                 </Button>
               )}
             </div>
-            {!useDemoStats && (
-              <button
-                type="button"
-                onClick={handleLoadDemoRounds}
-                disabled={seeding}
-                className="text-sm text-primary hover:underline font-medium"
-              >
-                {seeding
-                  ? 'Loading…'
-                  : rounds.length === 0
-                    ? 'Load 10 demo rounds into your account (overwrites saved rounds)'
-                    : 'Replace my saved rounds with 10 demo rounds'}
-              </button>
-            )}
           </CardContent>
         )}
         {chartData.length > 0 && (
