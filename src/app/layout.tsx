@@ -16,37 +16,54 @@ export const metadata: Metadata = {
   description: 'A simple app for tracking golf strokes gained.',
 };
 
+function HeaderWithClerk() {
+  return (
+    <header className="flex justify-end items-center p-4 gap-4 h-14 border-b border-border/40">
+      <SignedOut>
+        <SignInButton mode="modal" />
+        <SignUpButton mode="modal">
+          <span className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            Sign Up
+          </span>
+        </SignUpButton>
+      </SignedOut>
+      <SignedIn>
+        <UserButton afterSignOutUrl="/" />
+      </SignedIn>
+    </header>
+  );
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
-    <ClerkProvider>
-      <html lang="en" className="h-full">
-        <body
-          className={cn(
-            'h-full min-h-screen font-body antialiased',
-            'bg-background'
-          )}
-        >
-          <header className="flex justify-end items-center p-4 gap-4 h-14 border-b border-border/40">
-            <SignedOut>
-              <SignInButton mode="modal" />
-              <SignUpButton mode="modal">
-                <span className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-                  Sign Up
-                </span>
-              </SignUpButton>
-            </SignedOut>
-            <SignedIn>
-              <UserButton afterSignOutUrl="/" />
-            </SignedIn>
-          </header>
-          {children}
-          <Toaster />
-        </body>
-      </html>
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const content = publishableKey ? (
+    <ClerkProvider publishableKey={publishableKey}>
+      <HeaderWithClerk />
+      {children}
+      <Toaster />
     </ClerkProvider>
+  ) : (
+    <>
+      <header className="h-14 border-b border-border/40" />
+      {children}
+      <Toaster />
+    </>
+  );
+
+  return (
+    <html lang="en" className="h-full">
+      <body
+        className={cn(
+          'h-full min-h-screen font-body antialiased',
+          'bg-background'
+        )}
+      >
+        {content}
+      </body>
+    </html>
   );
 }
