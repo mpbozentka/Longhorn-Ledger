@@ -8,7 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Download, ChevronsRight, Save } from 'lucide-react';
 import { exportRoundToCsv } from '@/lib/csv';
+import { saveRound } from '@/lib/rounds-storage';
 import type { Lie } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
 
 type SGCategory = 'Tee' | 'Approach' | 'Short Game' | 'Putting';
 
@@ -31,17 +33,31 @@ const getCategory = (lie: Lie): SGCategory => {
 export function RoundSummary() {
   const { user, isSignedIn } = useUser();
   const { state, dispatch } = useRound();
+  const { toast } = useToast();
+  const [isSaving, setIsSaving] = React.useState(false);
 
   const handleExport = () => {
     exportRoundToCsv(state);
   };
 
-  const handleSubmitRound = () => {
+  const handleSubmitRound = async () => {
     if (!user?.id) return;
-    const userId = user.id;
-    // TODO: Send round to your database (e.g. POST /api/rounds with { userId, round: state })
-    console.log('Submit round for user:', userId, state);
-    // Example: await fetch('/api/rounds', { method: 'POST', body: JSON.stringify({ userId, round: state }) });
+    setIsSaving(true);
+    try {
+      await saveRound(state);
+      toast({
+        title: 'Round saved',
+        description: 'Your round has been saved to your stats.',
+      });
+    } catch (e) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not save round',
+        description: e instanceof Error ? e.message : 'Please try again.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
   
   const handleNewRound = () => {
@@ -129,8 +145,8 @@ export function RoundSummary() {
 
             <div className="flex flex-col space-y-2 pt-4">
                 {isSignedIn && (
-                  <Button onClick={handleSubmitRound} disabled={playedHoles.length === 0}>
-                    <Save className="mr-2 h-4 w-4" /> Submit Round
+                  <Button onClick={handleSubmitRound} disabled={playedHoles.length === 0 || isSaving}>
+                    <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving…' : 'Submit Round'}
                   </Button>
                 )}
                 <Button onClick={handleNewRound}>

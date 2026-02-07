@@ -12,7 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { Gender, TeeBox } from '@/lib/types';
 import { TEE_BOX_DATA } from '@/lib/course-data';
 
-export function LoginScreen() {
+type LoginScreenProps = {
+  /** When true, show Back button and call onCancel/onStartRound (signed-in start-round flow). */
+  showBack?: boolean;
+  onCancel?: () => void;
+  onStartRound?: () => void;
+};
+
+export function LoginScreen({ showBack, onCancel, onStartRound }: LoginScreenProps) {
   const [name, setName] = useState('');
   const [gender, setGender] = useState<Gender>('Male');
   const [teeBox, setTeeBox] = useState<TeeBox>('Longhorn White');
@@ -22,6 +29,7 @@ export function LoginScreen() {
     e.preventDefault();
     if (name.trim()) {
       dispatch({ type: 'START_ROUND', payload: { golferName: name.trim(), gender, teeBox } });
+      onStartRound?.();
     }
   };
 
@@ -85,12 +93,19 @@ export function LoginScreen() {
             </div>
           </CardContent>
           <CardFooter className="flex-col gap-2">
+            {showBack && (
+              <Button type="button" variant="ghost" className="w-full" onClick={onCancel}>
+                Back
+              </Button>
+            )}
             <Button type="submit" className="w-full">
               Tee Off
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={handleViewDemo} className="w-full text-muted-foreground">
-              View Demo Results
-            </Button>
+            {!showBack && (
+              <Button type="button" variant="ghost" size="sm" onClick={handleViewDemo} className="w-full text-muted-foreground">
+                View Demo Results
+              </Button>
+            )}
           </CardFooter>
         </form>
       </Card>
