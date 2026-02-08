@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import { useUser } from '@clerk/nextjs';
+import { useUser, SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 import { useRound } from '@/context/round-context';
-import { LoginScreen } from './login-screen';
+import { RoundSetup } from './round-setup';
 import { LandingScreen } from './landing-screen';
 import { Dashboard } from './dashboard';
 import { HoleTracker } from './hole-tracker';
@@ -36,18 +36,7 @@ export function MainApp() {
       return <RoundSummary />;
     }
     if (!state.golferName) {
-      if (isSignedIn) {
-        if (showStartRoundForm) {
-          return (
-            <LoginScreen
-              showBack
-              onCancel={() => setShowStartRoundForm(false)}
-              onStartRound={() => setShowStartRoundForm(false)}
-            />
-          );
-        }
-        return <Dashboard />;
-      }
+      if (isSignedIn) return <Dashboard />;
       return <LandingScreen />;
     }
     return <HoleTracker />;
@@ -58,33 +47,51 @@ export function MainApp() {
     isSignedIn &&
     ((!showStartRoundForm && !state.golferName) || state.isRoundCompleted);
 
+  if (isClient && showStartRoundForm) {
+    return (
+      <RoundSetup
+        onCancel={() => setShowStartRoundForm(false)}
+        onStartRound={() => setShowStartRoundForm(false)}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-background text-foreground px-4">
-      <header className="flex w-full max-w-md flex-col items-center pt-6 pb-4">
+      <header className="flex w-full max-w-md flex-col items-center pt-6 pb-4 border-b border-border/40">
         <div className="flex w-full items-center justify-between">
           <h1 className="text-2xl font-bold text-primary">The Longhorn Ledger</h1>
           <div className="flex items-center gap-2">
-            {showStartNewRoundButton && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  state.isRoundCompleted ? handleNewRound() : setShowStartRoundForm(true)
-                }
-              >
-                Start new round
-              </Button>
-            )}
-            {isClient && state.golferName && !state.isRoundCompleted && (
-              <>
-                <Button variant="ghost" size="sm" onClick={handleNewRound}>
-                  Reset
+            <SignedOut>
+              <SignInButton mode="modal" />
+              <SignUpButton mode="modal">
+                <Button size="sm">Sign Up</Button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              {showStartNewRoundButton && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    state.isRoundCompleted ? handleNewRound() : setShowStartRoundForm(true)
+                  }
+                >
+                  Start new round
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleEndRound}>
-                  End
-                </Button>
-              </>
-            )}
+              )}
+              {isClient && state.golferName && !state.isRoundCompleted && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={handleNewRound}>
+                    Reset
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleEndRound}>
+                    End
+                  </Button>
+                </>
+              )}
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
           </div>
         </div>
       </header>

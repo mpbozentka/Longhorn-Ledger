@@ -38,3 +38,11 @@ export const COURSE_DATA = {
         { hole: 18, par: 4, hcpM: 4, hcpW: 4, teeBoxes: { "Texas Tees": 517, "Longhorn Orange": 495, "Harvey Penick": 435, "Longhorn White": 435, "Morris Williams": 417, "UT Orange (M)": 417, "Ed White": 333, "UT Orange (W)": 417, "Betsy Rawls": 333, "UT White": 333 } },
     ]
 };
+
+export function getTotalYardsForTee(teeBox: TeeBox): number {
+  return COURSE_DATA.holes.reduce((sum, h) => sum + (h.teeBoxes[teeBox] ?? 0), 0);
+}
+
+export function getCoursePar(): number {
+  return COURSE_DATA.holes.reduce((sum, h) => sum + h.par, 0);
+}

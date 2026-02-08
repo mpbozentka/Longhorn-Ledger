@@ -2,37 +2,12 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from '@clerk/nextjs';
+import { ClerkProvider } from '@clerk/nextjs';
 
 export const metadata: Metadata = {
   title: 'The Longhorn Ledger',
   description: 'A simple app for tracking golf strokes gained.',
 };
-
-function HeaderWithClerk() {
-  return (
-    <header className="flex justify-end items-center p-4 gap-4 h-14 border-b border-border/40">
-      <SignedOut>
-        <SignInButton mode="modal" />
-        <SignUpButton mode="modal">
-          <span className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            Sign Up
-          </span>
-        </SignUpButton>
-      </SignedOut>
-      <SignedIn>
-        <UserButton afterSignOutUrl="/" />
-      </SignedIn>
-    </header>
-  );
-}
 
 export default function RootLayout({
   children,
@@ -42,13 +17,11 @@ export default function RootLayout({
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const content = publishableKey ? (
     <ClerkProvider publishableKey={publishableKey}>
-      <HeaderWithClerk />
       {children}
       <Toaster />
     </ClerkProvider>
   ) : (
     <>
-      <header className="h-14 border-b border-border/40" />
       {children}
       <Toaster />
     </>

@@ -1,7 +1,7 @@
 import type { RoundState } from './types';
 import type { Lie } from './types';
 
-type SGCategory = 'Tee' | 'Approach' | 'Short Game' | 'Putting';
+export type SGCategory = 'Tee' | 'Approach' | 'Short Game' | 'Putting';
 
 const getCategory = (lie: Lie): SGCategory => {
   switch (lie) {
@@ -19,25 +19,26 @@ const getCategory = (lie: Lie): SGCategory => {
   }
 };
 
+/** Returns strokes gained per category for a round (for trends / averages). */
+export function getSgByCategoryForRound(state: RoundState): Record<SGCategory, number> {
+  const acc: Record<SGCategory, number> = { Tee: 0, Approach: 0, 'Short Game': 0, Putting: 0 };
+  for (const hole of state.holes) {
+    for (const shot of hole.shots) {
+      if (shot.lie && shot.strokesGained != null) {
+        acc[getCategory(shot.lie)] += shot.strokesGained;
+      }
+    }
+  }
+  return acc;
+}
+
 export function computeRoundStats(state: RoundState): { totalScore: number; totalSG: number } {
   const playedHoles = state.holes;
   const totalScore = playedHoles.reduce(
     (sum, hole) => sum + (hole.isCompleted ? hole.shots.length - 1 : hole.shots.length),
     0
   );
-  const allShots = playedHoles.flatMap((hole) =>
-    hole.shots.filter((shot) => shot.strokesGained !== undefined)
-  );
-  const sgByCategory = allShots.reduce(
-    (acc, shot) => {
-      if (shot.lie) {
-        const category = getCategory(shot.lie);
-        acc[category] = (acc[category] || 0) + (shot.strokesGained ?? 0);
-      }
-      return acc;
-    },
-    {} as Record<SGCategory, number>
-  );
+  const sgByCategory = getSgByCategoryForRound(state);
   const totalSG = Object.values(sgByCategory).reduce((sum, val) => sum + val, 0);
   return { totalScore, totalSG };
 }
