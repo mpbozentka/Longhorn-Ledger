@@ -49,6 +49,8 @@ A golf round and **strokes gained** tracking app for **UT Golf Club**. Log shots
 
    See [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) for detailed Supabase setup (create project, run `supabase/rounds-table.sql`, copy keys).
 
+   - **Google AI (optional)** — for Genkit AI flows (e.g. voice shot parsing): get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey), then set `GEMINI_API_KEY` in `.env.local`.
+
 3. **Run the app**
 
    ```bash

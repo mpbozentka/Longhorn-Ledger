@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useUser, UserButton } from '@clerk/nextjs';
 import { getRounds, computeRoundStats, getSgByCategoryForRound, type SavedRound, type SGCategory } from '@/lib/rounds-storage';
+import { getFIRForRounds, getGIRForRounds, getPuttsForRounds } from '@/lib/round-stats';
 import { getDemoRoundState } from '@/lib/demo-round';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
@@ -10,9 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { CLUBS } from '@/lib/types';
+import { CLUBS, BLANK_DISTANCE } from '@/lib/types';
 
-const RANGE_OPTIONS = [20, 50, 'season'] as const;
+const RANGE_OPTIONS = [5, 20, 50, 'season'] as const;
 type RangeOption = (typeof RANGE_OPTIONS)[number];
 
 const CATEGORY_LABELS: Record<SGCategory, string> = {
@@ -53,7 +54,7 @@ export function Dashboard() {
   const [selectedRoundIndex, setSelectedRoundIndex] = useState<number | null>(null);
   const [useDemoStats, setUseDemoStats] = useState(false);
   const [demoRounds, setDemoRounds] = useState<SavedRound[]>([]);
-  const [range, setRange] = useState<RangeOption>(20);
+  const [range, setRange] = useState<RangeOption>(5);
   const [baseline, setBaseline] = useState<'pro' | 'scratch' | '5hcp'>('pro');
 
   const currentRounds = useMemo(
@@ -62,7 +63,7 @@ export function Dashboard() {
   );
   const displayedRounds = useMemo(() => {
     if (range === 'season') return currentRounds;
-    const n = range === 20 ? 20 : 50;
+    const n = range === 5 ? 5 : range === 20 ? 20 : 50;
     return currentRounds.slice(0, n);
   }, [currentRounds, range]);
   const safeSelectedIndex =
@@ -95,6 +96,19 @@ export function Dashboard() {
     for (const k of CATEGORY_ORDER) sum[k] = Math.round((sum[k] / currentRounds.length) * 100) / 100;
     return sum;
   }, [currentRounds]);
+
+  const firAgg = useMemo(
+    () => getFIRForRounds(displayedRounds),
+    [displayedRounds]
+  );
+  const girAgg = useMemo(
+    () => getGIRForRounds(displayedRounds),
+    [displayedRounds]
+  );
+  const puttsAgg = useMemo(
+    () => getPuttsForRounds(displayedRounds),
+    [displayedRounds]
+  );
 
   const vsSeason = useMemo(() => {
     const delta: Record<SGCategory, number> = { Tee: 0, Approach: 0, 'Short Game': 0, Putting: 0 };
@@ -154,7 +168,7 @@ export function Dashboard() {
     for (const round of roundsForTables) {
       for (const hole of round.roundState.holes) {
         for (const shot of hole.shots) {
-          if (shot.strokesGained === undefined || shot.lie === 'Green') continue;
+          if (shot.strokesGained === undefined || shot.lie === 'Green' || shot.startDistance === BLANK_DISTANCE) continue;
           if (shot.lie === 'Tee') {
             buckets['Off the tee'] += shot.strokesGained;
             continue;
@@ -189,7 +203,7 @@ export function Dashboard() {
     for (const round of roundsForTables) {
       for (const hole of round.roundState.holes) {
         for (const shot of hole.shots) {
-          if (shot.lie !== 'Green' || shot.strokesGained === undefined || shot.startDistance === 0) continue;
+          if (shot.lie !== 'Green' || shot.strokesGained === undefined || shot.startDistance === 0 || shot.startDistance === BLANK_DISTANCE) continue;
           const feet = shot.startDistance * 3;
           if (feet <= 5) buckets['0–5 ft'] += shot.strokesGained;
           else if (feet <= 10) buckets['5–10 ft'] += shot.strokesGained;
@@ -306,20 +320,19 @@ export function Dashboard() {
           <div>
             <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight">Performance Trends</h1>
             <p className="text-muted-foreground text-sm md:text-base mt-1">
-              Strokes Gained analysis for the {range === 'season' ? 'season' : `last ${range} rounds`}.
+              Strokes Gained and key stats for the {range === 'season' ? 'season' : `last ${range} rounds`}. Incomplete rounds are excluded from FIR/GIR/Putts averages.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {!loading && (
               <div className="flex rounded-lg border border-border bg-muted/50 p-1 gap-0.5">
-                {(RANGE_OPTIONS as unknown as (20 | 50 | 'season')[]).map((r) => (
+                {(RANGE_OPTIONS as unknown as (5 | 20 | 50 | 'season')[]).map((r) => (
                   <button
                     key={String(r)}
                     type="button"
                     onClick={() => setRange(r)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${
-                      range === r ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'
-                    }`}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${range === r ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'
+                      }`}
                   >
                     {r === 'season' ? 'Season' : `Last ${r}`}
                   </button>
@@ -358,11 +371,10 @@ export function Dashboard() {
           </Card>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 md:mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               {CATEGORY_ORDER.map((cat) => {
                 const val = avgByCategory[cat];
                 const delta = vsSeason[cat];
-                const isPositive = delta >= 0;
                 return (
                   <Card key={cat} className="border-border shadow-sm">
                     <CardContent className="p-5 flex flex-col gap-4">
@@ -390,6 +402,48 @@ export function Dashboard() {
                   </Card>
                 );
               })}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 md:mb-8">
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-5 flex flex-col gap-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Fairways in Regulation</span>
+                  <p className="text-2xl md:text-3xl font-black text-foreground tabular-nums">
+                    {firAgg.roundCount === 0 ? '—' : `${firAgg.percentage}%`}
+                  </p>
+                  {firAgg.roundCount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {firAgg.hit}/{firAgg.total} over {firAgg.roundCount} round{firAgg.roundCount === 1 ? '' : 's'}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-5 flex flex-col gap-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Greens in Regulation</span>
+                  <p className="text-2xl md:text-3xl font-black text-foreground tabular-nums">
+                    {girAgg.roundCount === 0 ? '—' : `${girAgg.averagePerRound} per round`}
+                  </p>
+                  {girAgg.roundCount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {girAgg.totalGIR} total in {girAgg.roundCount} round{girAgg.roundCount === 1 ? '' : 's'}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="border-border shadow-sm">
+                <CardContent className="p-5 flex flex-col gap-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Putts</span>
+                  <p className="text-2xl md:text-3xl font-black text-foreground tabular-nums">
+                    {puttsAgg.roundCount === 0 ? '—' : `${puttsAgg.averagePutts} Avg Putts`}
+                  </p>
+                  {puttsAgg.roundCount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {puttsAgg.totalPutts} total in {puttsAgg.roundCount} round{puttsAgg.roundCount === 1 ? '' : 's'}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             <Card className="mb-6 md:mb-8 border-border shadow-sm">
@@ -454,9 +508,8 @@ export function Dashboard() {
                   {(['pro', 'scratch', '5hcp'] as const).map((b) => (
                     <label
                       key={b}
-                      className={`flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                        baseline === b ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30'
-                      }`}
+                      className={`flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all ${baseline === b ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/30'
+                        }`}
                     >
                       <div>
                         <span className="font-bold text-foreground">

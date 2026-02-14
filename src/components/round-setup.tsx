@@ -1,14 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRound } from '@/context/round-context';
 import { COURSE_DATA, TEE_BOX_DATA, getTotalYardsForTee, getCoursePar } from '@/lib/course-data';
 import type { TeeBox } from '@/lib/types';
-import { Goal, MapPin, CheckCircle, Sun, PlayCircle, ArrowLeft } from 'lucide-react';
+import { Goal, MapPin, CheckCircle, Sun, PlayCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+
+type WeatherData = {
+  tempF: number;
+  condition: string;
+  windMph: number;
+  windDir: string;
+};
 
 const COURSE_IMAGE = 'https://lh3.googleusercontent.com/aida-public/AB6AXuCDjXDAbeKbjOFCcSwBQ5cI1tOHfTHqOGutCVCCd8xEIBj8aT2nVY0T2iv6o2_MmxVPotewVQv7Ahd-ZGMndDkL7Ju-qi6EvS6P4m4mQMywRP7N6S9kSZMqRC6OX0IWhYanw8k667hJhQlJIXF2ca40Ju_C99wgF5MufwOR6nsNlfPPrH2sZNDL0RM4FB_X2Gn3kjAGozq4D62HWWCoNP3LEuFs-pYaFS0v_J6b9gcaAndFNuDdsTfQ6X9tWGadMHIb3291-iGKX8q_';
 
@@ -24,11 +31,54 @@ type RoundSetupProps = {
   onStartRound?: () => void;
 };
 
+const FALLBACK_WEATHER: WeatherData = {
+  tempF: 84,
+  condition: 'Sunny',
+  windMph: 12,
+  windDir: 'SSE',
+};
+
 export function RoundSetup({ onCancel, onStartRound }: RoundSetupProps) {
   const { user } = useUser();
   const { dispatch } = useRound();
   const [selectedTee, setSelectedTee] = useState<TeeBox>('Longhorn White');
   const [useLiveWeather, setUseLiveWeather] = useState(true);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState(false);
+
+  useEffect(() => {
+    if (!useLiveWeather) {
+      setWeather(null);
+      setWeatherError(false);
+      return;
+    }
+    let cancelled = false;
+    setWeatherLoading(true);
+    setWeatherError(false);
+    fetch('/api/weather')
+      .then((res) => {
+        if (!res.ok) throw new Error('Weather failed');
+        return res.json();
+      })
+      .then((data: WeatherData) => {
+        if (!cancelled) setWeather(data);
+      })
+      .catch(() => {
+        if (!cancelled) setWeatherError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setWeatherLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [useLiveWeather]);
+
+  const displayWeather = useLiveWeather
+    ? (weather ?? (weatherError ? FALLBACK_WEATHER : null))
+    : FALLBACK_WEATHER;
+  const showLiveIndicator = useLiveWeather && weather && !weatherError;
 
   const displayName =
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
@@ -195,9 +245,25 @@ export function RoundSetup({ onCancel, onStartRound }: RoundSetupProps) {
                 <Sun className="size-8" />
               </div>
               <div>
-                <p className="font-bold text-lg">Current Weather: Austin, TX</p>
+                <p className="font-bold text-lg">
+                  Current Weather: Austin, TX
+                  {showLiveIndicator && (
+                    <span className="ml-2 text-xs font-normal text-green-600 dark:text-green-400">
+                      Live
+                    </span>
+                  )}
+                </p>
                 <p className="text-muted-foreground">
-                  84°F • 12mph SSE • Sunny
+                  {weatherLoading && !displayWeather ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="size-4 animate-spin" />
+                      Loading…
+                    </span>
+                  ) : displayWeather ? (
+                    `${displayWeather.tempF}°F • ${displayWeather.windMph}mph ${displayWeather.windDir} • ${displayWeather.condition}`
+                  ) : (
+                    '—'
+                  )}
                 </p>
               </div>
             </div>

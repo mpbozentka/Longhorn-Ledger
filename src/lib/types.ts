@@ -3,8 +3,7 @@ import { z } from 'zod';
 export type Lie = 'Tee' | 'Fairway' | 'Rough' | 'Sand' | 'Green';
 
 export const CLUBS = [
-  'Dr', '3w', '5w', 
-  '3 Hyb', '4 Hyb', '5 Hyb', '6 Hyb',
+  'Dr', '3w', '5w',
   '3i', '4i', '5i', '6i', '7i', '8i', '9i',
   'PW', 'GW', 'SW', 'LW',
   'Putter'
@@ -12,9 +11,12 @@ export const CLUBS = [
 
 export type Club = typeof CLUBS[number] | string;
 
+/** Sentinel for "distance not entered" (show blank in UI). Only tee shot gets a default (hole yardage). */
+export const BLANK_DISTANCE = -1;
+
 export type Shot = {
   shotNumber: number;
-  startDistance: number; // Always in yards
+  startDistance: number; // Always in yards; use BLANK_DISTANCE for "not entered"
   lie: Lie;
   club?: Club;
   strokesGained?: number;
@@ -39,7 +41,7 @@ export type TeeBox =
   | 'UT Orange (W)'
   | 'Betsy Rawls'
   | 'UT White';
-  
+
 export type Gender = 'Male' | 'Female';
 
 export type RoundState = {
@@ -66,9 +68,9 @@ export const ShotCommandInputSchema = z.string();
 export type ShotCommandInput = z.infer<typeof ShotCommandInputSchema>;
 
 export const ShotCommandOutputSchema = z.object({
-    lie: LieEnum.describe('The lie or surface the ball was on.'),
-    distance: z.number().describe('The distance to the pin.'),
-    units: UnitsEnum.describe('The unit of measurement for the distance.'),
-    club: z.string().optional().describe('The club used for the shot.'),
+  lie: LieEnum.describe('The lie or surface the ball was on.'),
+  distance: z.number().describe('The distance to the pin.'),
+  units: UnitsEnum.describe('The unit of measurement for the distance.'),
+  club: z.string().optional().describe('The club used for the shot.'),
 });
 export type ShotCommandOutput = z.infer<typeof ShotCommandOutputSchema>;

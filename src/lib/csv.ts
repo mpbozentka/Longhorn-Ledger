@@ -1,11 +1,12 @@
 import type { RoundState, Hole, Shot } from './types';
+import { BLANK_DISTANCE } from './types';
 
 export function exportRoundToCsv(roundState: RoundState) {
   if (!roundState.golferName) {
     alert('No golfer data to export.');
     return;
   }
-  
+
   const completedHoles = roundState.holes.filter(hole => hole.isCompleted);
 
   if (completedHoles.length === 0) {
@@ -31,14 +32,19 @@ export function exportRoundToCsv(roundState: RoundState) {
   ];
 
   const rows: (string | number | undefined)[][] = [];
-  
+
   completedHoles.forEach((hole: Hole) => {
     // We iterate to length - 1 to exclude the final "in the hole" shot
     for (let i = 0; i < hole.shots.length - 1; i++) {
       const shot = hole.shots[i];
       const nextShot = hole.shots[i + 1];
-      
-      const startDistanceDisplay = shot.lie === 'Green' ? (shot.startDistance * 3).toFixed(1) : shot.startDistance.toFixed(0);
+
+      const startDistanceDisplay =
+        shot.startDistance === BLANK_DISTANCE
+          ? ''
+          : shot.lie === 'Green'
+            ? (shot.startDistance * 3).toFixed(1)
+            : shot.startDistance.toFixed(0);
       const startUnit = shot.lie === 'Green' ? 'ft' : 'yds';
 
       let endDistanceDisplay: string;
@@ -49,13 +55,18 @@ export function exportRoundToCsv(roundState: RoundState) {
         endDistanceDisplay = '0';
         endUnit = 'in hole';
         endDistanceYds = 0;
+      } else if (nextShot.startDistance === BLANK_DISTANCE) {
+        endDistanceDisplay = '';
+        endUnit = 'yds';
+        endDistanceYds = 0;
       } else {
         endDistanceDisplay = nextShot.lie === 'Green' ? (nextShot.startDistance * 3).toFixed(1) : nextShot.startDistance.toFixed(0);
         endUnit = nextShot.lie === 'Green' ? 'ft' : 'yds';
         endDistanceYds = nextShot.startDistance;
       }
-      
-      const shotDistance = shot.startDistance - endDistanceYds;
+
+      const shotDistance =
+        shot.startDistance === BLANK_DISTANCE ? 0 : shot.startDistance - endDistanceYds;
 
       rows.push([
         roundState.golferName,

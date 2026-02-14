@@ -3,9 +3,15 @@
 import React, { useState, useCallback } from 'react';
 import { useRound } from '@/context/round-context';
 import type { Shot, Lie, Club } from '@/lib/types';
-import { CLUBS } from '@/lib/types';
-import { Crosshair, Goal, Minus, Plus, ArrowRight, Pencil } from 'lucide-react';
+import { CLUBS, BLANK_DISTANCE } from '@/lib/types';
+import { Crosshair, Goal, Minus, Plus, ArrowRight, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 const LIES: { value: Lie; label: string }[] = [
@@ -61,10 +67,15 @@ export function ActiveShotEntry({
 }: ActiveShotEntryProps) {
   const { dispatch } = useRound();
   const isGreen = activeShot.lie === 'Green';
-  const displayValue = isGreen ? Math.round(activeShot.startDistance * 3) : Math.round(activeShot.startDistance);
-  const [displayStr, setDisplayStr] = useState(String(displayValue));
+  const isBlank = activeShot.startDistance === BLANK_DISTANCE;
+  const displayValue = isBlank ? '' : isGreen ? Math.round(activeShot.startDistance * 3) : Math.round(activeShot.startDistance);
+  const [displayStr, setDisplayStr] = useState(isBlank ? '' : String(displayValue));
 
   const syncDisplayToShot = useCallback(() => {
+    if (activeShot.startDistance === BLANK_DISTANCE) {
+      setDisplayStr('');
+      return;
+    }
     const v = isGreen ? Math.round(activeShot.startDistance * 3) : Math.round(activeShot.startDistance);
     setDisplayStr(String(v));
   }, [activeShot.startDistance, isGreen]);
@@ -75,6 +86,14 @@ export function ActiveShotEntry({
 
   const applyDistance = useCallback(
     (num: number) => {
+      if (num === BLANK_DISTANCE) {
+        dispatch({
+          type: 'UPDATE_SHOT',
+          payload: { shotIndex: activeShotIndex, shot: { startDistance: BLANK_DISTANCE } },
+        });
+        setDisplayStr('');
+        return;
+      }
       const units = isGreen ? 'feet' : 'yards';
       const yards = isGreen ? num / 3 : num;
       dispatch({
@@ -101,7 +120,7 @@ export function ActiveShotEntry({
   };
 
   const handleDistanceDelta = (delta: number) => {
-    const num = parseInt(displayStr, 10) || 0;
+    const num = displayStr === '' ? 0 : parseInt(displayStr, 10) || 0;
     const next = Math.max(0, Math.min(isGreen ? 999 : 999, num + delta));
     setDisplayStr(String(next));
     applyDistance(next);
@@ -109,19 +128,19 @@ export function ActiveShotEntry({
 
   const handleKeypad = (key: string) => {
     if (key === 'C') {
-      setDisplayStr('0');
-      applyDistance(0);
+      setDisplayStr('');
+      applyDistance(BLANK_DISTANCE);
       return;
     }
     if (key === 'backspace') {
-      const next = displayStr.slice(0, -1) || '0';
+      const next = displayStr.slice(0, -1);
       setDisplayStr(next);
-      const num = parseInt(next, 10);
-      applyDistance(isNaN(num) ? 0 : num);
+      const num = next === '' ? BLANK_DISTANCE : parseInt(next, 10);
+      applyDistance(next === '' || isNaN(num) ? BLANK_DISTANCE : num);
       return;
     }
     const digit = key;
-    const nextStr = displayStr === '0' ? digit : displayStr + digit;
+    const nextStr = (displayStr === '' || displayStr === '0') ? digit : displayStr + digit;
     const next = parseInt(nextStr, 10);
     if (next <= (isGreen ? 999 : 999)) {
       setDisplayStr(nextStr);
@@ -134,20 +153,10 @@ export function ActiveShotEntry({
   const cardBg = 'bg-card';
 
   return (
-    <div className="flex flex-col gap-8 max-w-[600px] w-full">
-      {/* Hole info */}
-      <div className="flex flex-col items-center text-center gap-1">
-        <p className="text-6xl font-black leading-none tracking-tighter text-foreground">Hole {currentHole.holeNumber}</p>
-        <div className="flex items-center gap-2 px-4 py-1 rounded-full bg-primary/10">
-          <span className="text-primary text-lg font-semibold">Par {currentHole.par}</span>
-          <span className="text-muted-foreground">•</span>
-          <span className="text-muted-foreground font-medium">{currentHole.yardage} Yards</span>
-        </div>
-      </div>
-
+    <div className="flex flex-col gap-6 max-w-[600px] w-full">
       {/* Main card */}
       <div className={cn('rounded-xl shadow-xl border overflow-hidden', cardBg, sectionBorder)}>
-        {/* Lie selection */}
+        {/* Lie selection - above hole info */}
         <div className={cn('p-6 border-b', sectionBorder)}>
           <h2 className="text-foreground text-lg font-bold mb-4 uppercase tracking-widest flex items-center gap-2">
             <Crosshair className="size-5 text-primary" />
@@ -178,41 +187,11 @@ export function ActiveShotEntry({
           </div>
         </div>
 
-        {/* Club selection */}
-        <div className={cn('p-6 border-b', sectionBorder)}>
-          <h2 className="text-foreground text-lg font-bold mb-4 uppercase tracking-widest flex items-center gap-2">
-            <Goal className="size-5 text-primary" />
-            Select Club
-          </h2>
-          <div className="overflow-x-auto hide-scrollbar -mx-2 px-2">
-            <div className="flex gap-2 pb-2">
-              {CLUBS.map((club) => (
-                <label key={club} className="flex-shrink-0 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="club-selection"
-                    checked={(activeShot.club ?? 'Dr') === club}
-                    onChange={() => handleClubChange(club)}
-                    className="hidden peer"
-                  />
-                  <div
-                    className={cn(
-                      'flex items-center justify-center min-w-[70px] h-14 rounded-xl border-2 transition-all font-bold text-sm',
-                      (activeShot.club ?? 'Dr') === club
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : cn(mutedBg, 'border-transparent hover:bg-primary/10 hover:text-primary')
-                    )}
-                  >
-                    {clubLabel(club)}
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-
         {/* Distance */}
-        <div className="p-8 flex flex-col items-center">
+        <div className="p-8 flex flex-col items-center border-b border-border">
+          <p className="text-muted-foreground text-xs font-medium mb-0.5">
+            Hole {currentHole.holeNumber} · Par {currentHole.par} · {currentHole.yardage} Yards
+          </p>
           <h2 className="text-foreground text-lg font-bold mb-6 uppercase tracking-widest">Distance to Hole</h2>
           <div className="flex items-center gap-6 mb-8">
             <button
@@ -225,7 +204,7 @@ export function ActiveShotEntry({
             </button>
             <div className="flex flex-col items-center min-w-[140px]">
               <span className="text-7xl font-black text-foreground tracking-tighter tabular-nums">{displayStr}</span>
-              <span className="text-primary font-bold text-xl uppercase">{isGreen ? 'Feet' : 'Yards'}</span>
+              <span className="text-primary font-bold text-xl uppercase">yd. / ft.</span>
             </div>
             <button
               type="button"
@@ -267,8 +246,41 @@ export function ActiveShotEntry({
               onClick={() => handleKeypad('backspace')}
               aria-label="Backspace"
             >
-              <svg className="size-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden><path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg>
+              <svg className="size-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden><path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z" /></svg>
             </button>
+          </div>
+        </div>
+
+        {/* Club selection */}
+        <div className={cn('p-6 border-b', sectionBorder)}>
+          <h2 className="text-foreground text-lg font-bold mb-4 uppercase tracking-widest flex items-center gap-2">
+            <Goal className="size-5 text-primary" />
+            Select Club
+          </h2>
+          <div className="overflow-x-auto hide-scrollbar -mx-2 px-2">
+            <div className="flex gap-2 pb-2">
+              {CLUBS.map((club) => (
+                <label key={club} className="flex-shrink-0 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="club-selection"
+                    checked={(activeShot.club ?? 'Dr') === club}
+                    onChange={() => handleClubChange(club)}
+                    className="hidden peer"
+                  />
+                  <div
+                    className={cn(
+                      'flex items-center justify-center min-w-[70px] h-14 rounded-xl border-2 transition-all font-bold text-sm',
+                      (activeShot.club ?? 'Dr') === club
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : cn(mutedBg, 'border-transparent hover:bg-primary/10 hover:text-primary')
+                    )}
+                  >
+                    {clubLabel(club)}
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -302,9 +314,11 @@ export function ActiveShotEntry({
         </h3>
         <div className="flex flex-col gap-2">
           {currentHole.shots.map((shot, idx) => {
-            const toHoleDisplay = shot.lie === 'Green'
-              ? `${Math.round(shot.startDistance * 3)}ft to hole`
-              : `${Math.round(shot.startDistance)}y to hole`;
+            const toHoleDisplay = shot.startDistance === BLANK_DISTANCE
+              ? '—'
+              : shot.lie === 'Green'
+                ? `${Math.round(shot.startDistance * 3)}ft to hole`
+                : `${Math.round(shot.startDistance)}y to hole`;
             return (
               <div
                 key={idx}
@@ -321,15 +335,32 @@ export function ActiveShotEntry({
                     </span>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-primary"
-                  onClick={() => dispatch({ type: 'SET_ACTIVE_SHOT', payload: idx })}
-                  aria-label="Edit shot"
-                >
-                  <Pencil className="size-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-primary"
+                      aria-label="Edit or delete shot"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => dispatch({ type: 'SET_ACTIVE_SHOT', payload: idx })}>
+                      <Pencil className="size-4 mr-2" />
+                      Edit shot
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={currentHole.shots.length <= 1}
+                      onClick={() => dispatch({ type: 'REMOVE_SHOT', payload: idx })}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="size-4 mr-2" />
+                      Delete shot
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             );
           })}

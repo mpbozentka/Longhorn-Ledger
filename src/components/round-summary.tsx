@@ -1,17 +1,20 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRound } from '@/context/round-context';
 import { Button } from '@/components/ui/button';
-import { Download, Save, ChevronDown, Bell, Settings, CheckCircle2, AlertCircle, TrendingUp } from 'lucide-react';
-import { exportRoundToCsv } from '@/lib/csv';
+import { Save, ChevronDown, TrendingUp } from 'lucide-react';
 import { saveRound } from '@/lib/rounds-storage';
 import type { Lie } from '@/lib/types';
+import { BLANK_DISTANCE } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { UserButton } from '@clerk/nextjs';
 import { COURSE_DATA } from '@/lib/course-data';
+import { getFIRForRound, getGIRForRound, getPuttsForRound } from '@/lib/round-stats';
 import { cn } from '@/lib/utils';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { BarChart, Bar, XAxis, YAxis, Cell } from 'recharts';
+import { generateRoundInsight, type RoundInsightInput } from '@/ai/flows/round-insight-flow';
 
 type SGCategory = 'Tee' | 'Approach' | 'Short Game' | 'Putting';
 
@@ -50,6 +53,8 @@ export function RoundSummary() {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [showAllHoles, setShowAllHoles] = useState(false);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiInsightLoading, setAiInsightLoading] = useState(false);
 
   const playedHoles = state.holes;
   const allShots = playedHoles.flatMap((hole) =>
@@ -92,9 +97,140 @@ export function RoundSummary() {
     });
   }, [playedHoles]);
 
+  const fir = useMemo(() => getFIRForRound(state), [state]);
+  const gir = useMemo(() => getGIRForRound(state), [state]);
+  const putts = useMemo(() => getPuttsForRound(state), [state]);
+
   const displayRows = showAllHoles ? holeRows : holeRows.slice(0, 5);
 
-  const handleExport = () => exportRoundToCsv(state);
+  const roundInsight = useMemo(() => {
+    const facts: { fact: string; priority: number }[] = [];
+    const oddHoles = holeRows.filter((r) => r.hole % 2 === 1);
+    const evenHoles = holeRows.filter((r) => r.hole % 2 === 0);
+    const par3s = holeRows.filter((r) => r.par === 3);
+    const par5s = holeRows.filter((r) => r.par === 5);
+
+    if (oddHoles.length >= 3 && oddHoles.every((r) => r.score === r.par)) {
+      facts.push({ fact: 'You made par on every odd-numbered hole today.', priority: 90 });
+    }
+    if (evenHoles.length >= 3 && evenHoles.every((r) => r.score === r.par)) {
+      facts.push({ fact: 'You made par on every even-numbered hole today.', priority: 90 });
+    }
+    if (par3s.length >= 2 && par3s.every((r) => r.score <= r.par - 1)) {
+      facts.push({ fact: 'You birdied or better on every par 3.', priority: 95 });
+    }
+    if (par5s.length >= 2 && par5s.every((r) => r.score <= r.par - 1)) {
+      facts.push({ fact: 'You went under par on every par 5.', priority: 92 });
+    }
+
+    const putts = allShots.filter((s) => s.lie === 'Green' && s.startDistance > 0 && s.startDistance !== BLANK_DISTANCE);
+    const puttFeet = putts.map((s) => s.startDistance * 3);
+    if (puttFeet.length >= 3 && puttFeet.every((ft) => ft <= 6)) {
+      facts.push({ fact: 'You made every putt from inside 6 feet.', priority: 88 });
+    }
+    if (puttFeet.length >= 2 && puttFeet.every((ft) => ft <= 10)) {
+      facts.push({ fact: 'All of your putts today started from 10 feet or in.', priority: 75 });
+    }
+
+    let onePuttCount = 0;
+    playedHoles.forEach((hole) => {
+      const puttsOnHole = hole.shots.filter((s) => s.lie === 'Green' && s.startDistance !== 0);
+      if (puttsOnHole.length === 1) onePuttCount++;
+    });
+    if (onePuttCount >= 5 && playedHoles.length >= 9) {
+      facts.push({ fact: `You one-putted ${onePuttCount} greens today.`, priority: 85 });
+    }
+
+    let threePuttCount = 0;
+    playedHoles.forEach((hole) => {
+      const puttsOnHole = hole.shots.filter((s) => s.lie === 'Green' && s.startDistance !== 0);
+      if (puttsOnHole.length >= 3) threePuttCount++;
+    });
+    if (threePuttCount === 0 && playedHoles.length >= 5) {
+      facts.push({ fact: 'No three-putts this round.', priority: 82 });
+    }
+
+    const sandShots = allShots.filter((s) => s.lie === 'Sand');
+    if (sandShots.length === 0 && playedHoles.length >= 6) {
+      facts.push({ fact: "You stayed out of the sand all round.", priority: 70 });
+    }
+
+    const bestCat = (['Tee', 'Approach', 'Short Game', 'Putting'] as SGCategory[]).reduce((a, b) =>
+      (sgByCategory[a] ?? 0) >= (sgByCategory[b] ?? 0) ? a : b
+    );
+    const bestVal = sgByCategory[bestCat] ?? 0;
+    if (bestVal > 0.5 && Object.values(sgByCategory).filter((v) => (v ?? 0) > 0).length === 1) {
+      facts.push({
+        fact: `Your standout today was ${CATEGORY_LABELS[bestCat].toLowerCase()} — you gained ${bestVal.toFixed(1)} strokes there.`,
+        priority: 65,
+      });
+    }
+
+    const frontNine = holeRows.filter((r) => r.hole <= 9);
+    const backNine = holeRows.filter((r) => r.hole > 9);
+    if (frontNine.length >= 5 && frontNine.every((r) => r.score <= r.par)) {
+      facts.push({ fact: 'You were par or better on every hole on the front nine.', priority: 87 });
+    }
+    if (backNine.length >= 5 && backNine.every((r) => r.score <= r.par)) {
+      facts.push({ fact: 'You were par or better on every hole on the back nine.', priority: 87 });
+    }
+
+    if (facts.length > 0) {
+      facts.sort((a, b) => b.priority - a.priority);
+      return facts[0].fact;
+    }
+    const toPar = totalScore - totalPar;
+    const toParStr = toPar >= 0 ? `+${toPar}` : `${toPar}`;
+    if (totalSG >= 0) {
+      return `You gained ${totalSG.toFixed(1)} strokes vs. baseline. Score: ${totalScore} (${toParStr} to par).`;
+    }
+    return `You were ${Math.abs(totalSG).toFixed(1)} strokes below baseline. Score: ${totalScore} (${toParStr} to par).`;
+  }, [holeRows, playedHoles, allShots, sgByCategory, totalSG, totalScore, totalPar]);
+
+  useEffect(() => {
+    if (playedHoles.length < 2) {
+      setAiInsight(null);
+      return;
+    }
+    setAiInsight(null);
+    const putts = allShots.filter((s) => s.lie === 'Green' && s.startDistance > 0 && s.startDistance !== BLANK_DISTANCE);
+    const puttDistancesFeet = putts.map((s) => s.startDistance * 3);
+    let onePuttCount = 0;
+    let threePuttCount = 0;
+    playedHoles.forEach((hole) => {
+      const puttsOnHole = hole.shots.filter((s) => s.lie === 'Green' && s.startDistance !== 0);
+      if (puttsOnHole.length === 1) onePuttCount++;
+      if (puttsOnHole.length >= 3) threePuttCount++;
+    });
+    const sandShotCount = allShots.filter((s) => s.lie === 'Sand').length;
+    const payload: RoundInsightInput = {
+      holeByHole: holeRows.map((r) => ({ hole: r.hole, par: r.par, score: r.score, strokesGained: r.holeSG })),
+      strokesGainedByCategory: { ...sgByCategory },
+      totalScore,
+      totalPar,
+      totalStrokesGained: totalSG,
+      puttCount: putts.length,
+      onePuttCount,
+      threePuttCount,
+      sandShotCount,
+      puttDistancesFeet,
+    };
+    let cancelled = false;
+    setAiInsightLoading(true);
+    generateRoundInsight(payload)
+      .then((result) => {
+        if (!cancelled && result) setAiInsight(result);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAiInsightLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [holeRows, playedHoles, allShots, sgByCategory, totalSG, totalScore, totalPar]);
+
+  const displayInsight = aiInsightLoading ? 'Generating insight…' : (aiInsight ?? roundInsight);
 
   const handleSubmitRound = async () => {
     if (!user?.id) return;
@@ -121,35 +257,8 @@ export function RoundSummary() {
     year: 'numeric',
   });
 
-  const barScale = 2; // ±2 strokes for full bar width
-
   return (
     <div className="relative flex min-h-screen w-full flex-col bg-background text-foreground">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-border px-4 py-3 bg-card md:px-6">
-        <div className="flex items-center gap-3 text-primary">
-          <svg className="size-6" fill="currentColor" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8.57829 8.57829C5.52816 11.6284 3.451 15.5145 2.60947 19.7452C1.76794 23.9758 2.19984 28.361 3.85056 32.3462C5.50128 36.3314 8.29667 39.7376 11.8832 42.134C15.4698 44.5305 19.6865 45.8096 24 45.8096C28.3135 45.8096 32.5302 44.5305 36.1168 42.134C39.7033 39.7375 42.4987 36.3314 44.1494 32.3462C45.8002 28.361 46.2321 23.9758 45.3905 19.7452C44.549 15.5145 42.4718 11.6284 39.4217 8.57829L24 24L8.57829 8.57829Z" />
-          </svg>
-          <h2 className="text-lg font-bold leading-tight tracking-tight">UT Golf Club Stats</h2>
-        </div>
-        <div className="flex flex-1 justify-end gap-2 md:gap-4">
-          <nav className="hidden md:flex items-center gap-6">
-            <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Dashboard</a>
-            <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Rounds</a>
-            <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Practice</a>
-            <a className="text-sm font-medium hover:text-primary transition-colors" href="#">Profile</a>
-          </nav>
-          <Button variant="ghost" size="icon" className="rounded-lg size-10" aria-label="Notifications">
-            <Bell className="size-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="rounded-lg size-10" aria-label="Settings">
-            <Settings className="size-5" />
-          </Button>
-          <UserButton afterSignOutUrl="/" />
-        </div>
-      </header>
-
       <main className="flex-1 py-8">
         <div className="flex flex-col max-w-[1200px] mx-auto px-4 md:px-10">
           {/* Hero */}
@@ -165,57 +274,81 @@ export function RoundSummary() {
                 {roundDate} • Par {totalPar} • {state.teeBox}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1 px-8 py-4 bg-primary/10 rounded-xl border border-primary/20 min-w-[200px]">
-              <p className="text-primary text-sm font-bold uppercase tracking-wider">Total Strokes Gained</p>
-              <div className="flex items-baseline gap-2">
-                <span className={cn('text-5xl font-black', totalSG >= 0 ? 'text-primary' : 'text-muted-foreground')}>
-                  {totalSG >= 0 ? '+' : ''}{totalSG.toFixed(2)}
-                </span>
-                <span className="text-green-600 text-sm font-bold flex items-center gap-0.5">
-                  <TrendingUp className="size-4" /> vs. scratch
-                </span>
+            <div className="flex flex-row flex-nowrap items-stretch gap-3 min-w-0 shrink w-full md:w-auto md:max-w-[420px]">
+              <div className="flex flex-1 min-w-0 flex-col items-center justify-center gap-1 px-4 py-3 md:px-6 md:py-4 bg-primary/10 rounded-xl border border-primary/20">
+                <p className="text-primary text-xs md:text-sm font-bold uppercase tracking-wider">Total SG</p>
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className={cn('text-3xl md:text-5xl font-black', totalSG >= 0 ? 'text-primary' : 'text-muted-foreground')}>
+                    {totalSG >= 0 ? '+' : ''}{totalSG.toFixed(2)}
+                  </span>
+                  <span className="text-green-600 text-xs md:text-sm font-bold flex items-center gap-0.5">
+                    <TrendingUp className="size-3 md:size-4" /> vs. scratch
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-1 min-w-0 flex-col items-center justify-center gap-1 px-4 py-3 md:px-6 md:py-4 bg-primary/10 rounded-xl border border-primary/20">
+                <p className="text-primary text-xs md:text-sm font-bold uppercase tracking-wider">Total Score</p>
+                <div className="flex flex-col items-center gap-0.5 md:flex-row md:items-baseline md:gap-2">
+                  <span className="text-3xl md:text-5xl font-black text-foreground">{totalScore}</span>
+                  <span className="text-muted-foreground text-xs md:text-sm font-bold">
+                    ({totalScore - totalPar >= 0 ? '+' : ''}{totalScore - totalPar} to par)
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Category breakdown */}
+          {/* FIR / GIR / Putts */}
+          <div className="grid grid-cols-3 gap-3 mb-8">
+            <div className="rounded-lg border border-border bg-card px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Fairways</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">
+                {fir.total > 0 ? `${fir.percentage}% (${fir.hit}/${fir.total})` : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Greens</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">{gir.hit} / {gir.total}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Putts</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">{putts} Putts</p>
+            </div>
+          </div>
+
+          {/* Category breakdown - bar chart */}
           <section className="mb-10">
             <h3 className="text-[22px] font-bold leading-tight tracking-tight mb-4">Category Breakdown</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {(['Tee', 'Approach', 'Short Game', 'Putting'] as SGCategory[]).map((cat) => {
-                const sg = sgByCategory[cat] ?? 0;
-                const isPositive = sg >= 0;
-                const halfPct = Math.min(50, (Math.abs(sg) / barScale) * 50);
-                return (
-                  <div
-                    key={cat}
-                    className="flex flex-col gap-4 rounded-xl p-6 bg-card border border-border"
-                  >
-                    <div className="flex justify-between items-center">
-                      <p className="text-muted-foreground text-sm font-bold uppercase">{CATEGORY_LABELS[cat]}</p>
-                      <span className={cn('font-bold text-lg', isPositive ? 'text-primary' : 'text-muted-foreground')}>
-                        {sg >= 0 ? '+' : ''}{sg.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden relative">
-                      {isPositive ? (
-                        <div className="absolute left-1/2 h-full bg-primary rounded-r-full" style={{ width: `${halfPct}%` }} />
-                      ) : (
-                        <div className="absolute right-1/2 h-full bg-muted-foreground rounded-l-full" style={{ width: `${halfPct}%` }} />
-                      )}
-                      <div className="absolute left-1/2 w-0.5 h-full bg-foreground z-10 -translate-x-px" />
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      {isPositive ? (
-                        <CheckCircle2 className="size-4 text-green-600 shrink-0" />
-                      ) : (
-                        <AlertCircle className="size-4 text-primary shrink-0" />
-                      )}
-                      <span>{isPositive ? 'Gaining vs. baseline' : 'Room to improve'}</span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="rounded-xl p-6 bg-card border border-border">
+              <ChartContainer
+                config={{
+                  sg: { label: 'Strokes Gained', color: 'hsl(var(--primary))' },
+                }}
+                className="h-[240px] w-full"
+              >
+                <BarChart
+                  data={(['Tee', 'Approach', 'Short Game', 'Putting'] as SGCategory[]).map((cat) => ({
+                    name: CATEGORY_LABELS[cat],
+                    sg: sgByCategory[cat] ?? 0,
+                  }))}
+                  margin={{ top: 8, right: 8, bottom: 24, left: 8 }}
+                >
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
+                  <YAxis type="number" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (v >= 0 ? `+${v}` : `${v}`)} domain={['auto', 'auto']} width={36} />
+                  <ChartTooltip content={<ChartTooltipContent formatter={(v) => [(v as number) >= 0 ? `+${(v as number).toFixed(2)}` : (v as number).toFixed(2), 'Strokes Gained']} />} />
+                  <Bar dataKey="sg" radius={[4, 4, 4, 4]} maxBarSize={48}>
+                    {(['Tee', 'Approach', 'Short Game', 'Putting'] as SGCategory[]).map((_, idx) => {
+                      const sg = sgByCategory[['Tee', 'Approach', 'Short Game', 'Putting'][idx] as SGCategory] ?? 0;
+                      return (
+                        <Cell
+                          key={idx}
+                          fill={sg >= 0 ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground) / 0.7)'}
+                        />
+                      );
+                    })}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
             </div>
           </section>
 
@@ -223,9 +356,6 @@ export function RoundSummary() {
           <section className="mb-10 bg-card rounded-xl border border-border overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="text-lg font-bold">Hole-by-Hole Performance</h3>
-              <Button variant="ghost" size="sm" className="text-primary font-bold gap-2" onClick={handleExport} disabled={playedHoles.length === 0}>
-                <Download className="size-4" /> Export CSV
-              </Button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -272,9 +402,7 @@ export function RoundSummary() {
             <div className="flex flex-col gap-4 p-6 bg-card rounded-xl border border-border">
               <h3 className="text-lg font-bold">Round Insight</h3>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                {totalSG >= 0
-                  ? `You gained ${totalSG.toFixed(1)} strokes vs. baseline this round. Total score: ${totalScore} (${totalScore - totalPar >= 0 ? '+' : ''}${totalScore - totalPar} to par).`
-                  : `You were ${Math.abs(totalSG).toFixed(1)} strokes below baseline. Total score: ${totalScore} (${totalScore - totalPar >= 0 ? '+' : ''}${totalScore - totalPar} to par).`}
+                {displayInsight}
               </p>
               <div className="mt-2 flex flex-wrap gap-3">
                 {isSignedIn && (
