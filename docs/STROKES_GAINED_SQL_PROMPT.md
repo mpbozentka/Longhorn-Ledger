@@ -118,4 +118,16 @@ WHERE sg_ott IS NOT NULL  -- optional: only rounds with SG populated
 GROUP BY user_id;
 ```
 
+---
+
+## 7. Run order (migration → backfill → view)
+
+Run these in the Supabase SQL Editor in order:
+
+1. **Migration** – Add the four SG columns to `rounds`: `supabase/migrations/20250214_add_sg_category_columns.sql`
+2. **Backfill** – Populate `sg_ott`, `sg_app`, `sg_arg`, `sg_putt` from existing `round_state`: `supabase/backfill_sg_categories.sql`
+3. **View** – Create the dashboard view: `supabase/views/golfer_sg_dashboard.sql`
+
+After that, new rounds should have these columns set by the app when saving; the view gives per-user averages for reporting.
+
 Use this prompt when implementing or reviewing SG aggregation in SQL, app code, or BI tools.
