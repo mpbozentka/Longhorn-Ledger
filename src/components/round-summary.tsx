@@ -97,6 +97,7 @@ export function RoundSummary() {
     });
   }, [playedHoles]);
 
+  // Round totals (sum for this round); same values persisted as fir_count, gir_count, total_putts when saved
   const fir = useMemo(() => getFIRForRound(state), [state]);
   const gir = useMemo(() => getGIRForRound(state), [state]);
   const putts = useMemo(() => getPuttsForRound(state), [state]);

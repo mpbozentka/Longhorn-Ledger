@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getSupabaseServer } from '@/lib/supabase-server';
 import { computeRoundStats } from '@/lib/rounds-storage';
+import { getFIRForRound, getGIRForRound, getPuttsForRound } from '@/lib/round-stats';
 import type { RoundState } from '@/lib/types';
 
 export async function GET() {
@@ -14,7 +15,7 @@ export async function GET() {
     const supabase = getSupabaseServer();
     const { data, error } = await supabase
       .from('rounds')
-      .select('id, created_at, total_score, total_sg, round_state')
+      .select('id, created_at, total_score, total_sg, round_state, fir_count, gir_count, total_putts')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -29,6 +30,9 @@ export async function GET() {
       totalScore: row.total_score,
       totalSG: row.total_sg,
       roundState: row.round_state as RoundState,
+      fir_count: row.fir_count ?? undefined,
+      gir_count: row.gir_count ?? undefined,
+      total_putts: row.total_putts ?? undefined,
     }));
 
     return NextResponse.json(rounds);
@@ -47,6 +51,9 @@ export async function POST(request: Request) {
 
     const roundState = (await request.json()) as RoundState;
     const { totalScore, totalSG } = computeRoundStats(roundState);
+    const fir = getFIRForRound(roundState);
+    const gir = getGIRForRound(roundState);
+    const totalPutts = getPuttsForRound(roundState);
 
     const supabase = getSupabaseServer();
     const { error } = await supabase.from('rounds').insert({
@@ -54,6 +61,9 @@ export async function POST(request: Request) {
       total_score: totalScore,
       total_sg: totalSG,
       round_state: roundState,
+      fir_count: fir.hit,
+      gir_count: gir.hit,
+      total_putts: totalPutts,
     });
 
     if (error) {

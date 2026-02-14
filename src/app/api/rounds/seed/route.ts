@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getSupabaseServer } from '@/lib/supabase-server';
 import { computeRoundStats } from '@/lib/rounds-storage';
+import { getFIRForRound, getGIRForRound, getPuttsForRound } from '@/lib/round-stats';
 import { getDemoRoundState } from '@/lib/demo-round';
 
 /** Replaces all rounds for the current user with 10 new demo rounds (68–80 scores). */
@@ -31,7 +32,9 @@ export async function POST() {
     for (let i = 0; i < 10; i++) {
       const roundState = getDemoRoundState(i);
       const { totalScore, totalSG } = computeRoundStats(roundState);
-      // Oldest round 9 days ago, newest today
+      const fir = getFIRForRound(roundState);
+      const gir = getGIRForRound(roundState);
+      const totalPutts = getPuttsForRound(roundState);
       const created_at = new Date(now - (9 - i) * oneDayMs).toISOString();
       rows.push({
         user_id: userId,
@@ -39,6 +42,9 @@ export async function POST() {
         total_sg: totalSG,
         round_state: roundState,
         created_at,
+        fir_count: fir.hit,
+        gir_count: gir.hit,
+        total_putts: totalPutts,
       });
     }
 

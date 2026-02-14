@@ -7,7 +7,10 @@ create table if not exists public.rounds (
   total_score int not null,
   total_sg numeric not null,
   round_state jsonb not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  fir_count int default 0,
+  gir_count int default 0,
+  total_putts int default 0
 );
 
 -- Index for fast listing by user (dashboard loads "my rounds")

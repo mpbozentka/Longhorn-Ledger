@@ -48,6 +48,23 @@ export type SavedRound = {
   totalScore: number;
   totalSG: number;
   roundState: RoundState;
+  /** Total fairways hit (Par 4 & 5). From DB when loaded; computed on save. */
+  fir_count?: number;
+  /** Total greens in regulation. From DB when loaded; computed on save. */
+  gir_count?: number;
+  /** Total putts for the round. From DB when loaded; computed on save. */
+  total_putts?: number;
+};
+
+/** Shape of public.golfer_dashboard_stats view (optional; use when querying the view by user_id). */
+export type GolferDashboardStats = {
+  user_id: string;
+  round_count: number;
+  avg_score: number;
+  avg_total_sg: number;
+  avg_fir_count: number;
+  avg_gir_count: number;
+  avg_total_putts: number;
 };
 
 /** Fetch rounds from Supabase via API (uses current Clerk session). */
