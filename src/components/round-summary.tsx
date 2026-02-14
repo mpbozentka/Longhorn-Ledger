@@ -4,7 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useRound } from '@/context/round-context';
 import { Button } from '@/components/ui/button';
-import { Save, ChevronDown, TrendingUp } from 'lucide-react';
+import { Save, ChevronDown, TrendingUp, Home } from 'lucide-react';
 import { saveRound } from '@/lib/rounds-storage';
 import type { Lie } from '@/lib/types';
 import { BLANK_DISTANCE } from '@/lib/types';
@@ -424,6 +424,9 @@ export function RoundSummary() {
                 </div>
               </div>
             </div>
+            <Button variant="outline" className="w-full mt-3 gap-2" onClick={() => dispatch({ type: 'RESET_ROUND' })}>
+              <Home className="size-4" /> Return to Home
+            </Button>
           </div>
         </div>
       </main>

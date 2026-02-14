@@ -10,7 +10,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
 import { CLUBS, BLANK_DISTANCE } from '@/lib/types';
 
 const RANGE_OPTIONS = [5, 20, 50, 'season'] as const;
@@ -56,6 +56,7 @@ export function Dashboard() {
   const [demoRounds, setDemoRounds] = useState<SavedRound[]>([]);
   const [range, setRange] = useState<RangeOption>(5);
   const [baseline, setBaseline] = useState<'pro' | 'scratch' | '5hcp'>('pro');
+  const [chartView, setChartView] = useState<'category' | 'trends'>('category');
 
   const currentRounds = useMemo(
     () => (useDemoStats ? demoRounds : rounds),
@@ -86,17 +87,6 @@ export function Dashboard() {
     return sum;
   }, [displayedRounds]);
 
-  const seasonAvgByCategory = useMemo(() => {
-    const sum: Record<SGCategory, number> = { Tee: 0, Approach: 0, 'Short Game': 0, Putting: 0 };
-    if (currentRounds.length === 0) return sum;
-    for (const r of currentRounds) {
-      const cat = getSgByCategoryForRound(r.roundState);
-      for (const k of CATEGORY_ORDER) sum[k] += cat[k];
-    }
-    for (const k of CATEGORY_ORDER) sum[k] = Math.round((sum[k] / currentRounds.length) * 100) / 100;
-    return sum;
-  }, [currentRounds]);
-
   const firAgg = useMemo(
     () => getFIRForRounds(displayedRounds),
     [displayedRounds]
@@ -109,15 +99,6 @@ export function Dashboard() {
     () => getPuttsForRounds(displayedRounds),
     [displayedRounds]
   );
-
-  const vsSeason = useMemo(() => {
-    const delta: Record<SGCategory, number> = { Tee: 0, Approach: 0, 'Short Game': 0, Putting: 0 };
-    if (range === 'season' || displayedRounds.length === 0) return delta;
-    for (const k of CATEGORY_ORDER) {
-      delta[k] = Math.round((avgByCategory[k] - seasonAvgByCategory[k]) * 100) / 100;
-    }
-    return delta;
-  }, [range, displayedRounds.length, avgByCategory, seasonAvgByCategory]);
 
   const totalDeltaVsPro = useMemo(() => {
     const total = CATEGORY_ORDER.reduce((s, k) => s + avgByCategory[k], 0);
@@ -319,9 +300,6 @@ export function Dashboard() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-6 md:mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-black text-foreground tracking-tight">Performance Trends</h1>
-            <p className="text-muted-foreground text-sm md:text-base mt-1">
-              Strokes Gained and key stats for the {range === 'season' ? 'season' : `last ${range} rounds`}. Incomplete rounds are excluded from FIR/GIR/Putts averages.
-            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {!loading && (
@@ -371,38 +349,115 @@ export function Dashboard() {
           </Card>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              {CATEGORY_ORDER.map((cat) => {
-                const val = avgByCategory[cat];
-                const delta = vsSeason[cat];
-                return (
-                  <Card key={cat} className="border-border shadow-sm">
-                    <CardContent className="p-5 flex flex-col gap-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                          {CATEGORY_LABELS[cat]}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-2xl md:text-3xl font-black text-foreground tabular-nums">
-                          {val >= 0 ? '+' : ''}{val.toFixed(2)}
-                        </p>
-                        {range !== 'season' && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            {delta >= 0 ? (
-                              <span className="text-green-700 font-bold text-sm">↑ +{delta.toFixed(2)}</span>
-                            ) : (
-                              <span className="text-red-700 font-bold text-sm">↓ {delta.toFixed(2)}</span>
-                            )}
-                            <span className="text-muted-foreground text-sm font-normal">vs Season</span>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+            <Card className="mb-6 md:mb-8 border-border shadow-sm">
+              <CardHeader className="pb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-xl">Strokes Gained</CardTitle>
+                    <CardDescription>
+                      {chartView === 'category'
+                        ? `Average SG per round ${range !== 'season' ? `(last ${range} rounds)` : '(season)'}`
+                        : 'Strokes gained per round. Click a point to select that round.'}
+                    </CardDescription>
+                  </div>
+                  <div className="flex rounded-lg border border-border bg-muted/50 p-1 gap-0.5 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setChartView('category')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${chartView === 'category' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+                    >
+                      By Category
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartView('trends')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${chartView === 'trends' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-primary'}`}
+                    >
+                      Over Time
+                    </button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 pt-0">
+                {chartView === 'category' ? (
+                  <ChartContainer
+                    config={{
+                      sg: { label: 'Strokes Gained', color: 'hsl(var(--primary))' },
+                    }}
+                    className="h-[240px] w-full"
+                  >
+                    <BarChart
+                      data={CATEGORY_ORDER.map((cat) => ({
+                        name: CATEGORY_LABELS[cat],
+                        sg: avgByCategory[cat] ?? 0,
+                      }))}
+                      margin={{ top: 8, right: 8, bottom: 24, left: 8 }}
+                    >
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
+                      <YAxis type="number" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (v >= 0 ? `+${v}` : `${v}`)} domain={['auto', 'auto']} width={36} />
+                      <ChartTooltip content={<ChartTooltipContent formatter={(v) => [(v as number) >= 0 ? `+${(v as number).toFixed(2)}` : (v as number).toFixed(2), 'Strokes Gained']} />} />
+                      <Bar dataKey="sg" radius={[4, 4, 4, 4]} maxBarSize={48}>
+                        {CATEGORY_ORDER.map((cat) => {
+                          const val = avgByCategory[cat] ?? 0;
+                          return (
+                            <Cell
+                              key={cat}
+                              fill={val >= 0 ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground) / 0.7)'}
+                            />
+                          );
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                ) : (
+                  <>
+                    <div
+                      ref={chartContainerRef}
+                      onClick={handleChartClick}
+                      className="cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.preventDefault(); }}
+                      aria-label="Click to select a round"
+                    >
+                      <ChartContainer
+                        config={{
+                          strokesGained: { label: 'Total SG', color: 'hsl(var(--primary))' },
+                          ott: { label: 'OTT', color: 'rgb(59 130 246)' },
+                          app: { label: 'APP', color: 'rgb(34 197 94)' },
+                          putt: { label: 'PUTT', color: 'rgb(168 85 247)' },
+                        }}
+                        className="h-[280px] w-full"
+                      >
+                        <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="round" tickLine={false} axisLine={false} tickMargin={8} />
+                          <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (v >= 0 ? `+${v}` : `${v}`)} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Line type="monotone" dataKey="strokesGained" stroke="hsl(var(--primary))" strokeWidth={2} dot={({ cx, cy, payload, index }) => {
+                            const dataPoint = (index != null && chartData[index]) ? chartData[index] : payload;
+                            const roundIndex = dataPoint?.roundIndex;
+                            return (
+                              <g key={`dot-${roundIndex ?? index}`} data-round-index={roundIndex} onClick={(e) => { e.stopPropagation(); const ri = e.currentTarget.getAttribute('data-round-index'); if (ri != null) setSelectedRoundIndex(Number(ri)); }} style={{ cursor: 'pointer' }}>
+                                <circle cx={cx} cy={cy} r={6} fill="hsl(var(--primary))" stroke={safeSelectedIndex === roundIndex ? 'var(--foreground)' : 'transparent'} strokeWidth={2} />
+                              </g>
+                            );
+                          }} connectNulls />
+                          <Line type="monotone" dataKey="ott" stroke="rgb(59 130 246)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
+                          <Line type="monotone" dataKey="app" stroke="rgb(34 197 94)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
+                          <Line type="monotone" dataKey="putt" stroke="rgb(168 85 247)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
+                        </LineChart>
+                      </ChartContainer>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {safeSelectedIndex !== null
+                        ? `Selected: Round ${(safeSelectedIndex ?? 0) + 1} — ${displayedRounds[safeSelectedIndex] ? new Date(displayedRounds[safeSelectedIndex].date).toLocaleDateString() : ''}`
+                        : `${displayedRounds.length} round${displayedRounds.length === 1 ? '' : 's'} (click chart to select one)`}
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 md:mb-8">
               <Card className="border-border shadow-sm">
@@ -445,58 +500,6 @@ export function Dashboard() {
                 </CardContent>
               </Card>
             </div>
-
-            <Card className="mb-6 md:mb-8 border-border shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xl">SG Trends Over Time</CardTitle>
-                <CardDescription>Strokes gained per round. Click a point to select that round.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div
-                  ref={chartContainerRef}
-                  onClick={handleChartClick}
-                  className="cursor-pointer"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.preventDefault(); }}
-                  aria-label="Click to select a round"
-                >
-                  <ChartContainer
-                    config={{
-                      strokesGained: { label: 'Total SG', color: 'hsl(var(--primary))' },
-                      ott: { label: 'OTT', color: 'rgb(59 130 246)' },
-                      app: { label: 'APP', color: 'rgb(34 197 94)' },
-                      putt: { label: 'PUTT', color: 'rgb(168 85 247)' },
-                    }}
-                    className="h-[280px] w-full"
-                  >
-                    <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="round" tickLine={false} axisLine={false} tickMargin={8} />
-                      <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (v >= 0 ? `+${v}` : `${v}`)} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <Line type="monotone" dataKey="strokesGained" stroke="hsl(var(--primary))" strokeWidth={2} dot={({ cx, cy, payload, index }) => {
-                        const dataPoint = (index != null && chartData[index]) ? chartData[index] : payload;
-                        const roundIndex = dataPoint?.roundIndex;
-                        return (
-                          <g key={`dot-${roundIndex ?? index}`} data-round-index={roundIndex} onClick={(e) => { e.stopPropagation(); const ri = e.currentTarget.getAttribute('data-round-index'); if (ri != null) setSelectedRoundIndex(Number(ri)); }} style={{ cursor: 'pointer' }}>
-                            <circle cx={cx} cy={cy} r={6} fill="hsl(var(--primary))" stroke={safeSelectedIndex === roundIndex ? 'var(--foreground)' : 'transparent'} strokeWidth={2} />
-                          </g>
-                        );
-                      }} connectNulls />
-                      <Line type="monotone" dataKey="ott" stroke="rgb(59 130 246)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
-                      <Line type="monotone" dataKey="app" stroke="rgb(34 197 94)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
-                      <Line type="monotone" dataKey="putt" stroke="rgb(168 85 247)" strokeWidth={1.5} dot={false} connectNulls strokeDasharray="4 2" />
-                    </LineChart>
-                  </ChartContainer>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {safeSelectedIndex !== null
-                    ? `Selected: Round ${(safeSelectedIndex ?? 0) + 1} — ${displayedRounds[safeSelectedIndex] ? new Date(displayedRounds[safeSelectedIndex].date).toLocaleDateString() : ''}`
-                    : `${displayedRounds.length} round${displayedRounds.length === 1 ? '' : 's'} (click chart to select one)`}
-                </p>
-              </CardContent>
-            </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 mb-8">
               <Card className="border-border shadow-sm">
